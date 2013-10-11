@@ -1,6 +1,9 @@
 #!/bin/bash
 # Usage: bin/compile <build-dir> <cache-dir>
 
+apt-get -y install ruby
+apt-get -y install emacs
+
 set -e
 set -o pipefail
 
@@ -28,7 +31,6 @@ PHP_URL="${S3_URL}/${PHP_FILE}"
 NEWRELIC_URL="${S3_URL}/${NEWRELIC_FILE}"
 COMPOSER_URL="http://getcomposer.org/composer.phar"
 PEAR_LIB="${S3_URL}/${PEARLIB_FILE}"
-#
 
 function indent() {
 	c='s/^/       /'
@@ -52,8 +54,8 @@ function download_url() {
 }
 
 BIN_DIR=$(dirname $0)
-BUILD_DIR=$1
-CACHE_DIR=$2
+BUILD_DIR="/app"
+CACHE_DIR="/cache"
 BUNDLE_DIR="${CACHE_DIR}/bundles"
 LP_DIR=`cd $(dirname $0); cd ..; pwd`
 export COMPOSER_HOME="${CACHE_DIR}/.composer"
@@ -97,6 +99,7 @@ fi
 
 mkdir -p ${BUILD_DIR}/vendor/nginx
 tar xzf ${NGINX_FILE} -C ${BUILD_DIR}/vendor/nginx
+sed -i 's/css;/css less;/g' ${BUILD_DIR}/vendor/nginx/conf/mime.types
 
 # libmcrypt
 echo "-----> Installing libmcrypt"
@@ -161,28 +164,6 @@ tar xzf ${PHP_FILE} -C ${BUILD_DIR}/vendor/php
 export PATH="{$PATH}:${BUILD_DIR}/vendor/php/bin"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${BUILD_DIR}/local/lib"
 
-# newrelic
-echo "-----> Installing newrelic"
-if [ -f "${NEWRELIC_FILE}" ]
-then
-	if check_md5 "${NEWRELIC_FILE}"
-	then
-		echo "Bundling newrelic daemon v${NEWRELIC_VERSION}" | indent
-		echo ${NEWRELIC_URL} | indent
-		download_url ${NEWRELIC_URL}
-	else
-		echo "Using cached newrelic daemon v${NEWRELIC_VERSION}" | indent
-	fi
-else
-	echo "Bundling newrelic daemon v${NEWRELIC_VERSION}" | indent
-	echo ${NEWRELIC_URL} | indent
-	download_url ${NEWRELIC_URL}
-fi
-
-tar xzf ${NEWRELIC_FILE} -C ${BUILD_DIR}/local
-
-popd > /dev/null
-
 # Composer Installation
 pushd ${BUILD_DIR} > /dev/null
 if [ -f "composer.json" ]
@@ -246,6 +227,8 @@ if [ -d /app/conf ]; then
 
 fi
 
+export PORT=80
+
 # Set correct port variable.
 erb /app/vendor/nginx/conf/nginx.conf.erb > /app/vendor/nginx/conf/nginx.conf
 
@@ -290,5 +273,45 @@ fi
 EOF
 chmod +x boot.sh
 
-echo "-----> Done with compile"
+echo "-----> Now Installing Local Mysql Server"
 
+/etc/init.d/apparmor stop
+update-rc.d -f apparmor remove
+apt-get -y remove apparmor apparmor-utils
+
+groupadd mysql
+useradd -r -g mysql mysql
+
+apt-get -y install libaio1
+
+cd /usr/local/
+wget http://cdn.mysql.com/Downloads/MySQL-5.6/mysql-5.6.14-linux-glibc2.5-x86_64.tar.gz
+
+tar xvfz mysql-5.6.14-linux-glibc2.5-x86_64.tar.gz
+mv mysql-5.6.14-linux-glibc2.5-x86_64 mysql
+cd mysql
+chown -R mysql .
+chgrp -R mysql .
+scripts/mysql_install_db --user=mysql
+chown -R root .
+chown -R mysql data
+cp support-files/mysql.server /etc/init.d/mysql.server
+sed -i 's/sql_mode/#sql_mode/g' /usr/local/mysql/my.cnf
+/etc/init.d/mysql.server start
+update-rc.d mysql.server defaults
+ln -s /usr/local/mysql/bin/* /usr/local/bin/
+mysql_secure_installation
+
+echo "-----> Now Finished MySQL Install"
+
+echo "-----> Installing Local Redis Server"
+
+apt-get install redis-server
+
+echo "-----> Finished Installing Redis"
+
+echo "-----> Finished Compiling"
+
+echo "-----> If you need to import a fresh copy of the DB run this script: /root/heroku-buildpack-php-tyler/console/hmt_sync_db.sh"
+
+echo "-----> When ready to get going, just launch the /app/boot.sh"
