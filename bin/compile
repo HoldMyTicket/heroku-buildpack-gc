@@ -100,6 +100,7 @@ fi
 mkdir -p ${BUILD_DIR}/vendor/nginx
 tar xzf ${NGINX_FILE} -C ${BUILD_DIR}/vendor/nginx
 sed -i 's/css;/css less;/g' ${BUILD_DIR}/vendor/nginx/conf/mime.types
+sed -i 's/127.0.1.1/10.0.2.2/g' /etc/hosts
 
 # libmcrypt
 echo "-----> Installing libmcrypt"
