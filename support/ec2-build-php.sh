@@ -30,8 +30,6 @@ echo "+ Installing build dependencies..."
 apt-get -y install g++ \
 gcc \
 libssl-dev \
-libpng-dev \
-libjpeg-dev \
 libxml2-dev \
 libmysqlclient-dev \
 libpq-dev \
